@@ -12,8 +12,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler, OrdinalEncoder
 
 from ambiguity_solver_network import prepareDataSet, DuplicateClassifier, Normalise
 
-avg_mean = [0,0, 0, 0, 0, 0, 0, 0, 0]
-avg_sdv = [0,0, 0, 0, 0, 0, 0, 0, 0]
+avg_mean = [0, 0, 0, 0, 0, 0, 0, 0]
+avg_sdv = [0, 0, 0, 0, 0, 0, 0, 0]
 events = 0
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -56,7 +56,7 @@ def prepareTrainingData(data: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
             "truthMatchProbability",
             "Hits_ID",
             "chi2",
-            "pT","seed_id" , "rank"
+           "pT","seed_id","rank"
         ]
     )
     # Compute the normalisation factors
@@ -87,7 +87,7 @@ def batchSplit(data: pd.DataFrame, batch_size: int) -> list[pd.DataFrame]:
     n_particle = 0
     id_prev = 0
     id = 0
-    for index, row, rank  in zip(data[0], data[1], data[2]):
+    for index, row, truth in zip(data[0], data[1], data[2]):
         if index != pid:
             pid = index
             n_particle += 1
@@ -113,17 +113,22 @@ def computeLoss(
     @param[in] margin: Margin used in the computation of the MarginRankingLoss
     @return: return the updated loss
     """
-    # Compute the losses using the MarginRankingLoss with respect to the good track score
+    # copute the losses using MarginRankingLoss with respect to the the one less rank track score
+ 
+
     batch_loss = batch_loss
     if score_duplicate:
-        for s in score_duplicate:
-            batch_loss += F.relu(s - score_good + margin) / len(score_duplicate)
+        for s in range (0 ,len( score_duplicate)):
+            # track with most less rank (good)  with the next track rank 
+            if (s ==0):
+                       batch_loss += F.relu( score_duplicate[s] - score_good + margin) / len(score_duplicate)
+            # track with  less rank with the next track rank 
+            else :
+                   batch_loss += F.relu( score_duplicate[s] - score_duplicate[s-1]  + margin) / len(score_duplicate)
     return batch_loss
 
-import time
 
-
-def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]:
+def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, float]:
     """Run the MLP on a batch and compute the corresponding efficiency and loss. If an optimiser is specified train the MLP."""
     """
     @param[in] batch:  list of DataFrame, each element correspond to a batch 
@@ -150,24 +155,14 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
         score_good = 0
         # score of the duplicate tracks
         score_duplicate = []
-
         if Optimiser:
             Optimiser.zero_grad()
-        input = torch.tensor(b_data[2], dtype=torch.float32)
+        input = torch.tensor(b_data[1], dtype=torch.float32)
         input = input.to(device)
         prediction = duplicateClassifier(input)
-        #score of number the tracks per event  
-        prev_rank = 0
-        # loop over all the track in the batch 
-        for index, pred, rank in zip(b_data[0], prediction,b_data[1] ):
-
-
-           
-            #update score of previous rank to get a maximum value of rank
-            if prev_rank < rank:
-                prev_rank = rank 
-            
-            # If we are changing particle update the loss
+        # loop over all the track in the batch
+        for index, pred, truth in zip(b_data[0], prediction, b_data[2]):
+            # If we are changing particle uptade the loss
             if index != pid:
                 # Starting a new particles, compute the loss for the previous one
                 if max_match == 1:
@@ -175,24 +170,6 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
                 batch_loss = computeLoss(
                     score_good, score_duplicate, batch_loss, margin=0.05
                 )
-               #loop over all the track for the same event 
-                for i in range (0 ,  len(score_duplicate)  ):
-                   # Compute the loss for the  particle with good track and first duplicate
-                    if i == 0 : 
-                             batch_loss = computeLoss(
-                             score_duplicate[0] , score_duplicate[1:], batch_loss, margin=0.05
-                              )
-                     # Compute the loss for the  particle with good track and all ather duplicates track 
-                    else :
-                          batch_loss = computeLoss(
-                          score_duplicate[i] , score_duplicate[i+1:], batch_loss, margin=0.05
-                              )
-                    
-                # Normalise the loss to the track size
-                if( len(score_duplicate)  != 0):
-                   batch_loss = batch_loss / len(score_duplicate)
-                # reset the previous rank score  for get the new event 
-                prev_rank = 0  
                 nb_part += 1
                 # Reinitialise the variable for the next particle
                 pid = index
@@ -200,9 +177,8 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
                 score_good = 0
                 max_score = 0
                 max_match = 0
-
             # Store track scores
-            if rank == 0:
+            if truth:
                 score_good = pred
             else:
                 score_duplicate.append(pred)
@@ -211,13 +187,7 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
                 max_match = 0
             if pred > max_score:
                 max_score = pred
-                # rank equal 0 when it is good 
-                if rank == 0: 
-                #store max_match to 1 when a track good 
-                   max_match = 1
-                else:
-                    #store max_match to 1 when a track duplication 
-                   max_match = 0
+                max_match = truth
         # Compute the loss for the last particle when reaching the end of the batch
         if max_match == 1:
             nb_good_match += 1
@@ -232,6 +202,7 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
             Optimiser.step()
     loss = loss / len(batch)
     return nb_part, nb_good_match, loss
+
 
 def train(
     duplicateClassifier: DuplicateClassifier,
@@ -282,8 +253,8 @@ def train(
 
 # ==================================================================
 
-# ttbar events used as the training input, here we assume 1000 events are availables
-CKF_files = sorted(glob.glob("/data/atlas/rifaie/With_rank" + "/event0000000[0-6][0-9]-tracks_ckf.csv"))
+# th_seed38ttbar events used as the training input, here we assume 1000 events are availables
+CKF_files = sorted(glob.glob("/data/atlas/rifaie/With_rank_with_seed38" + "/event0000000[0-7][0-9]-tracks_ckf.csv"))
 data = readDataSet(CKF_files)
 
 # Prepare the data
@@ -301,17 +272,16 @@ duplicateClassifier = nn.Sequential(
 )
 duplicateClassifier = duplicateClassifier.to(device)
 
-#store the value of input the train a model 
-input = data.index , data['rank'].tolist(), x_train
 # Train the model and save it
+input = data.index, x_train, y_train
 train(duplicateClassifier, input, epochs=20, batch=128, validation=0.3)
 duplicateClassifier.eval()
 input_test = torch.tensor(x_train, dtype=torch.float32)
-torch.save(duplicateClassifier, "duplicateClassifier.pt")
+torch.save(duplicateClassifier, "duplicateClassifier_withoutSeedDup(true)_algo2_3layer.pt")
 torch.onnx.export(
     duplicateClassifier,
     input_test[0:1],
-    "duplicateClassifier.onnx",
+    "duplicateClassifier_withoutSeedDup(true)_algo2_3layer.onnx",
     input_names=["x"],
     output_names=["y"],
     dynamic_axes={"x": {0: "batch_size"}, "y": {0: "batch_size"}},
@@ -320,7 +290,7 @@ torch.onnx.export(
 
 # ttbar events for the test, here we assume 1000 events are availables
 CKF_files_test = sorted(
-    glob.glob("/data/atlas/rifaie/With_rank" + "/event0000000[7-9][0-9]-tracks_ckf.csv")
+    glob.glob("/data/atlas/rifaie/With_rank_with_seed38" + "/event0000000[8-9][0-9]-tracks_ckf.csv")
 )
 test = readDataSet(CKF_files_test)
 
@@ -369,5 +339,3 @@ if max_match == 1:
 print("nb particles: ", nb_part)
 print("nb good match: ", nb_good_match)
 print("Efficiency: ", 100 * nb_good_match / nb_part, " %")
-
-
