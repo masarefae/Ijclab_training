@@ -160,9 +160,6 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
         prev_rank = 0
         # loop over all the track in the batch 
         for index, pred, rank in zip(b_data[0], prediction,b_data[1] ):
-
-
-           
             #update score of previous rank to get a maximum value of rank
             if prev_rank < rank:
                 prev_rank = rank 
@@ -172,22 +169,19 @@ def scoringBatch(batch: list[pd.DataFrame], Optimiser=0) -> tuple[int, int, int]
                 # Starting a new particles, compute the loss for the previous one
                 if max_match == 1:
                     nb_good_match += 1
-                batch_loss = computeLoss(
-                    score_good, score_duplicate, batch_loss, margin=0.05
-                )
+               
                #loop over all the track for the same event 
                 for i in range (0 ,  len(score_duplicate)  ):
-                   # Compute the loss for the  particle with good track and first duplicate
+                   # Compute the loss for the  particle with good track and  all ather duplicate
                     if i == 0 : 
                              batch_loss = computeLoss(
-                             score_duplicate[0] , score_duplicate[1:], batch_loss, margin=0.05
-                              )
-                     # Compute the loss for the  particle with good track and all ather duplicates track 
+                    score_good, score_duplicate, batch_loss, margin=0.05
+                             )
+                     # Compute the loss for the  particle with next rank track and all ather duplicates track 
                     else :
                           batch_loss = computeLoss(
                           score_duplicate[i] , score_duplicate[i+1:], batch_loss, margin=0.05
                               )
-                    
                 # Normalise the loss to the track size
                 if( len(score_duplicate)  != 0):
                    batch_loss = batch_loss / len(score_duplicate)
