@@ -113,7 +113,7 @@ def computeLoss(
     @param[in] margin: Margin used in the computation of the MarginRankingLoss
     @return: return the updated loss
     """
-    # copute the losses using MarginRankingLoss with respect to the the one less rank track score
+    # compute the losses using MarginRankingLoss with respect to the the one less rank track score
  
 
     batch_loss = batch_loss
@@ -122,7 +122,7 @@ def computeLoss(
             # track with most less rank (good)  with the next track rank 
             if (s ==0):
                        batch_loss += F.relu( score_duplicate[s] - score_good + margin) / len(score_duplicate)
-            # track with  less rank with the next track rank 
+            # Track with the next lowest rank compared with the following track rank
             else :
                    batch_loss += F.relu( score_duplicate[s] - score_duplicate[s-1]  + margin) / len(score_duplicate)
     return batch_loss

@@ -298,7 +298,7 @@ def train(
     writer.close()
     return duplicateClassifier
 
-def readDataSett(CKS_files : list[str]) -> pd.DataFrame:
+def readDataSetTest(CKS_files : list[str]) -> pd.DataFrame:
     """Read the dataset from the different files, remove the pure duplicate tracks and combine the datasets"""
     data = pd.DataFrame()
     for f in CKS_files:
@@ -343,7 +343,7 @@ def objective(trial):
 
     # Define another file path pattern and read additional dataset files
     CKF_filles = sorted(glob.glob("/data/atlas/callaire/Acts/ODD_data/odd_full_chain_02" + "/event0000000[0-9][0-9]-tracks_ckf.csv"))
-    dataa = readDataSett(CKF_filles)
+    dataa = readDataSetTest(CKF_filles)
 
     avg_mean = [0, 0, 0, 0, 0, 0, 0, 0]
     avg_sdv = [0, 0, 0, 0, 0, 0, 0, 0]
